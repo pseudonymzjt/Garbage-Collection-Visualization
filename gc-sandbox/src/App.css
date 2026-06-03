@@ -1,0 +1,142 @@
+/* src/App.css */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: #0f172a; /* 深 slate 蓝背景 */
+  color: #f8fafc;
+  height: 100vh;
+}
+
+/* 主界面布局 */
+.app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* 左侧控制面板 */
+.control-panel {
+  width: 320px;
+  background-color: #1e293b;
+  border-right: 1px solid #334155;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.panel-title {
+  font-size: 1.25rem;
+  font-weight: bold;
+  border-bottom: 2px solid #3b82f6;
+  padding-bottom: 10px;
+  margin: 0;
+}
+
+.btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+button:disabled {
+  background-color: #475569;
+  cursor: not-allowed;
+}
+
+/* 右侧画布区域 */
+.canvas-container {
+  flex-grow: 1;
+  position: relative;
+  background-color: #0b0f19;
+  overflow: hidden;
+}
+
+/* 内存块节点 */
+.node {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #475569; /* 默认灰色 */
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #64748b;
+  transform: translate(-50%, -50%); /* 让坐标定位在圆心 */
+  cursor: grab;
+  user-select: none;
+  font-weight: bold;
+  transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+
+.node:active {
+  cursor: grabbing;
+}
+
+/* 连线模式下被选中的源节点：蓝色虚线边框 */
+.node.linking-source {
+  border-color: #3b82f6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+}
+
+/* 删除连线模式下被选中的源节点：红色虚线边框 */
+.node.delete-target {
+  border-color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+/* 根节点：绿色 */
+.node.root-node {
+  background-color: #10b981;
+  border-color: #059669;
+}
+
+/* 标记阶段高亮：黄色 */
+.node.marked-node {
+  background-color: #eab308;
+  border-color: #ca8a04;
+  box-shadow: 0 0 15px rgba(234, 179, 8, 0.6);
+}
+
+/* 正在被回收清除：淡出缩小 */
+.node.sweeping-node {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.2);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 节点上方的引用数字提示 */
+.ref-count-badge {
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  background-color: #ef4444;
+  color: white;
+  font-size: 11px;
+  border-radius: 10px;
+  padding: 2px 6px;
+}
