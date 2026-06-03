@@ -8,13 +8,13 @@
 **GC Sandbox** — 垃圾回收（Garbage Collection）算法可视化沙盒
 
 ### 定位与目标
-这是一个面向**计算机导论/系统级课程**的交互式教学演示工具。它将抽象的堆内存管理机制（标记-清除算法、引用计数算法）具象化为**可视化节点图**，并通过"慢动作"时间调度机制，让学习者能直观观察 GC 算法每一步的执行过程。
+这是一个面向**计算机导论 / OOP 系统课程**的交互式教学演示工具。它将抽象的 **JVM 堆内存管理机制**（标记-清除算法、引用计数算法）具象化为**可视化节点图**，并通过"慢动作"时间调度机制，让学习者能直观观察 GC 算法每一步的执行过程。游戏右侧面板同步展示 **Java 源码**，模拟 `static` 集合、未注销监听器、`ThreadLocal` 遗留、未取消 `Timer` 等经典 JVM 内存泄漏场景。
 
 ### 技术栈
 | 层面 | 技术选型 |
 |------|----------|
-| 框架 | React 18（基于 Vite 构建） |
-| 语言 | JavaScript (ES6+) |
+| 前端框架 | React 18（基于 Vite 构建） |
+| 代码对照区语言 | **Java** — 展示 JVM 内存泄漏场景的源码 |
 | 样式 | 纯 CSS（深色主题，配合 className 动态切换实现动效） |
 | 矢量渲染 | HTML5 SVG（用于自适应连线与箭头标记） |
 | 依赖 | 零第三方图形库，仅 React + ReactDOM |
@@ -28,8 +28,10 @@ gc-sandbox/
 ├── favicon.svg            # 站点图标
 └── src/
     ├── main.jsx           # React 挂载入口
-    ├── App.jsx            # 核心逻辑（~300行单文件）：状态定义、交互、GC 算法实现
-    └── App.css            # 样式定义（深色主题、节点动画过渡）
+    ├── App.jsx            # 核心逻辑（~380行）：状态定义、交互、GC 算法、关卡控制
+    ├── App.css            # 样式定义（深色主题、节点动画、三栏布局、Java 代码高亮）
+    └── levels/
+        └── LevelData.js   # 6 个关卡的拓扑配置与对应的 Java 源码片段
 ```
 
 ---
@@ -85,13 +87,15 @@ gc-sandbox/
 **Node（节点）**：
 ```javascript
 {
-  id: string,           // 唯一标识（如 'root', 'obj_1712345678'）
-  name: string,         // 显示名称（如 'Root', 'Obj_0'）
-  isRoot: boolean,      // 是否为根节点（绿色高亮）
-  x: number,            // 画布 X 坐标（像素）
-  y: number,            // 画布 Y 坐标（像素）
+  id: string,                    // 唯一标识（如 'root', 'obj_1712345678'）
+  name: string,                  // 显示名称（如 'JVM_Roots', 'staticCache'）
+  type: 'root'|'object'|'dom'|'purple',  // 节点类型（决定圆圈颜色）
+  isRoot: boolean,               // 是否为根节点（绿色高亮）
+  x: number,                     // 画布 X 坐标（像素）
+  y: number,                     // 画布 Y 坐标（像素）
+  size: number,                  // 模拟内存大小（MB），用于过关检测
   state: 'idle' | 'marked' | 'sweeping',  // 动画状态
-  refCount: number      // 引用计数（入度）
+  refCount: number               // 引用计数（入度）
 }
 ```
 
@@ -105,10 +109,11 @@ gc-sandbox/
 ```
 
 ### 关键设计亮点
-1. **异步调度动画**：利用 `async/await` + `sleep(ms)` 实现"慢动作"扫描，让每一步高亮都可视化
-2. **函数式状态更新**：在异步循环中始终使用 `setXxx(prev => ...)` 避免陈旧闭包
-3. **SVG 连线动态追踪**：连线起点终点实时绑定节点坐标，拖拽时自动拉伸
-4. **CSS Transition 动画**：无需额外动画库，通过 `marked-node` 和 `sweeping-node` 两个 CSS 类实现黄亮和淡出效果
+1. **双语言架构**：前端 UI 使用 React 渲染画布和交互逻辑；右侧代码对照区展示 **Java 源码**，模拟 JVM 内存泄漏场景，实现"图形操作 → Java 代码实时联动"
+2. **异步调度动画**：利用 `async/await` + `sleep(ms)` 实现"慢动作"扫描，让每一步高亮都可视化
+3. **函数式状态更新**：在异步循环中始终使用 `setXxx(prev => ...)` 避免陈旧闭包
+4. **SVG 连线动态追踪**：连线起点终点实时绑定节点坐标，拖拽时自动拉伸
+5. **CSS Transition 动画**：无需额外动画库，通过 `marked-node` 和 `sweeping-node` 两个 CSS 类实现黄亮和淡出效果
 
 ### 第一阶段已修复问题
 1. **SVG 箭头偏移量校准**：`refX` 从 `34` 改为 `60`，使箭头尖端精准落在 60px 直径圆圈（半径 30px）的边缘。计算基准：viewBox 宽度 10，markerWidth 6，比例 0.6px/unit，偏移量 = (60-10) × 0.6 = 30px。
@@ -131,6 +136,8 @@ gc-sandbox/
 | 实现阶段数 | 5/5（全部完成） |
 | 代码行数 (App.jsx) | ~380 行 |
 | 代码行数 (App.css) | ~200 行 |
+| 关卡数 | 6 关（Java JVM 内存泄漏场景） |
+| 代码对照区语言 | **Java** |
 | 核心功能点 | 16 项 |
 | 第三方依赖 | 零（仅 React + ReactDOM） |
 
@@ -144,12 +151,12 @@ gc-sandbox/
 
 #### 🛠️ 核心任务
 
-- [ ] **1. 节点类型体系设计**
-  - 为 `Node` 数据模型新增 `type` 字段，支持四种类型：
-    - `'root'` — 🟢 **绿色节点**：`Root / window`（全局根节点，常驻内存）
-    - `'object'` — 🔘 **灰色节点**：`JS Object`（普通 JavaScript 对象）
-    - `'dom'` — 🟠 **橙色节点**：`DOM Element`（网页上的 HTML 元素）
-    - `'purple'` — 🟣 **紫色节点**：`Closure / Timer / Listener`（闭包、定时器、事件监听器等引擎层对象）
+- [ ] **1. 节点类型体系设计（JVM 语义）**
+  - 为 `Node` 数据模型新增 `type` 字段，支持四种 JVM 语义类型：
+    - `'root'` — 🟢 **绿色节点**：`JVM_Roots`（GC Root 区域：静态变量、线程栈、JNI 等，常驻内存）
+    - `'object'` — 🔘 **灰色节点**：`Java Object`（普通堆对象，如 `ArrayList`、`byte[]`、业务 POJO）
+    - `'dom'` — 🟠 **橙色节点**：`Event Source`（事件源 / 发布者，如全局 `EventPublisher`、`Observable`）
+    - `'purple'` — 🟣 **紫色节点**：`JVM Internal`（`ThreadLocalMap`、`TimerThread`、监听器 `Listener` 等 JVM 引擎层对象）
   - 更新 `App.css` 新增对应样式类：`.node.dom-node`（橙色）、`.node.purple-node`（紫色）
 
 - [ ] **2. 全局状态设计（App.jsx）**
@@ -211,57 +218,125 @@ gc-sandbox/
 
 ---
 
-### 📅 第二阶段：关卡 1、2、3 实现 — 基础 GC 与内存解耦（第 2 天）
+### 📅 第二阶段：关卡 1、2、3 实现 — JVM 基础 GC 与内存优化（第 2 天）
 
-**目标**：编写 L1、L2、L3 的拓扑数据配置，实现最基础的 GC 解谜和代码高亮/注释切换。
+**目标**：编写 L1、L2、L3 的拓扑数据配置，实现最基础的 GC 解谜和 **Java 代码** 高亮/注释切换。
 
 #### 🛠️ 核心任务
 
-| 关卡 | 关卡名称 | 核心模拟场景 | 解谜方式 | 代码对照区变化 |
+| 关卡 | 关卡名称 | JVM 真实泄漏场景 (Java) | 解谜方式 | 代码对照区变化 |
 | :--- | :--- | :--- | :--- | :--- |
-| **L1** | **全局缓存泄漏** | 函数执行完毕，但临时数据被不小心 push 进全局的 `Array` | 断开全局数组到临时数据的连线，运行 **Mark-Sweep GC** | 连线存在时高亮 `cache.push(obj)`，断开后变灰注释：`// cache.push(obj);` |
-| **L2** | **循环引用的诅咒** | 两个孤立对象互相指向（`A ⇄ B`），形成孤岛 | **限制：只能用引用计数 GC**，断开环路使 `rc` 降为 0 | 切断边时代码区 `a.next = b;` 变为注释，展现引用计数消亡过程 |
-| **L3** | **重度资源解耦** | 组件树中存在冗余的多余强引用指针，导致高内存资源常驻 | 分析拓扑图，删掉冗余边，使活动内存降至目标值（$\le 10\text{MB}$） | 代码区变为动态置空逻辑：`this.heavyData = null;` |
+| **L1** | **静态集合膨胀** | `static List` 属于 GC Root，临时数据被 `add` 后无法被 JVM 回收 | 断开 `staticList` 到临时对象的连线，运行 **Mark-Sweep GC** | 高亮 `cache.add(data)`，断开后变灰注释：`// cache.add(data);` |
+| **L2** | **循环引用的孤岛** | 两个孤立对象互相持有引用（`b.next = c; c.next = b`） | **限制：只能用引用计数 GC**，断开环路使 `rc` 降为 0 | `b.next = c;` 变灰注释，展现引用计数局限性 |
+| **L3** | **堆内存强引用解耦** | 强引用指向巨大 `byte[]` 缓冲区，且存在多余强引用链路 | 删掉冗余边，使活动内存降至目标值（$\le 10\text{MB}$） | 代码区变为手动置空：`this.bigBuffer = null;` |
 
-- [ ] **1. L1 全局缓存泄漏逻辑**
-  - 画布配置：`Root` ──> `cache` (Size: 10M) ──> `tempData` (Size: 90M)
-  - 玩家动作：删除 `cache` 到 `tempData` 的连线
-  - 代码对照：连线存在时高亮 `cache.push(tempData);`；断开后更新为注释 `// cache.push(tempData); // 👈 已解绑！`
+- [ ] **1. L1：静态集合膨胀（Static Collection Leak）**
+  - 画布配置：🟢 `JVM_Roots` ──> 🔘 `staticCache` (List) ──> 🔘 `tempData` (100MB)
+  - 玩家动作：删除 `staticCache` 到 `tempData` 的连线
+  - **Java 代码对照**：
+    ```java
+    public class CacheManager {
+        private static List<Object> cache = new ArrayList<>();
 
-- [ ] **2. L2 循环引用环逻辑**
-  - 画布配置：三个孤立对象相互引用成环，强制使用"引用计数 GC"
+        public void process() {
+            Object tempData = new byte[100 * 1024 * 1024];
+            // 连线存在时高亮：
+            cache.add(tempData);
+            // 断开后变为：
+            // cache.add(tempData); // 👈 已解绑！
+        }
+    }
+    ```
+
+- [ ] **2. L2：循环引用的孤岛（Reference Cycle）**
+  - 画布配置：两个孤立对象 `b` 和 `c` 相互引用成环，强制使用"引用计数 GC"
   - 解谜方式：剪断其中一根回指的引用连线
+  - **Java 代码对照**：
+    ```java
+    class Node { Node next; }
+    Node b = new Node(), c = new Node();
+    b.next = c;
+    c.next = b; // 👈 剪断此线，变为注释
+    ```
 
-- [ ] **3. L3 重度资源解耦逻辑**
-  - 画布配置：`HeavyComponent` 直接引用了 150M 的 `HugeBuffer`，同时 `App` 也强行连向它
-  - 玩家动作：清除冗余连接，触发 `this.heavyData = null`，运行 GC，让常驻内存降至 $10\text{MB}$ 以下
+- [ ] **3. L3：堆内存强引用解耦（Strong Reference Decoupling）**
+  - 画布配置：`Root` ──> `HeavyComponent` ──> `bigBuffer` (150MB)，且 `Root` 也有一条冗余链路指向 `bigBuffer`
+  - 玩家动作：清除冗余连接，触发 `this.bigBuffer = null`，运行 GC，让常驻内存降至 $10\text{MB}$ 以下
+  - **Java 代码对照**：
+    ```java
+    public class DataHandler {
+        private byte[] bigBuffer = new byte[150 * 1024 * 1024];
+
+        public void clear() {
+            // 连线切断后高亮此行：
+            this.bigBuffer = null;
+        }
+    }
+    ```
 
 ---
 
-### 📅 第三阶段：关卡 4、5、6 实现 — 模拟真实开发痛点（第 3-4 天）
+### 📅 第三阶段：关卡 4、5、6 实现 — Java 开发真实痛点攻坚（第 3-4 天）
 
-**目标**：结合不同颜色和类型的节点（DOM 节点、Timer 节点、监听器节点），实现高级内存泄漏关卡。
+**目标**：结合不同颜色和类型的节点（事件源节点、ThreadLocal 节点、Timer 节点），模拟真实的 Java 内存泄漏事故。
 
 #### 🛠️ 核心任务
 
-| 关卡 | 关卡名称 | 核心模拟场景 | 解谜方式 | 代码对照区变化 |
+| 关卡 | 关卡名称 | JVM 真实泄漏场景 (Java) | 解谜方式 | 代码对照区变化 |
 | :--- | :--- | :--- | :--- | :--- |
-| **L4** | **事件监听器残留** | DOM 元素被移除，但全局 `window` 绑定的事件监听器未被 `remove` | 点击"卸载组件"后发现组件未释放，必须**斩断 window 到监听器的连线** | 切断连线后自动补上 `btn.removeEventListener(...)` |
-| **L5** | **分离的 DOM 节点** | 节点已从 DOM 树中移除（`removeChild`），但 JS 全局变量仍持有强引用 | 发现页面上没有该按钮但内存中依然存在，**切断全局 JS 对象指向 DOM 节点的边** | `myApp.cachedButton = btn;` 被重构置空为 `myApp.cachedButton = null;` |
-| **L6** | **被遗忘的定时器** | `setInterval` 启动后未在组件销毁时 `clearInterval` | **清除代表 Timer 的紫色节点与全局 window 的连接** | 从活动定时器状态变为：`clearInterval(this.timerId);` |
+| **L4** | **监听器未注销** | 全局 `EventPublisher` 保留对短生命周期组件的监听器引用 | 卸载组件后未释放，必须**斩断发布者到监听器的连线** | 自动补上 `EventPublisher.unregister(this)` |
+| **L5** | **ThreadLocal 遗留** | 线程池复用线程但未调用 `ThreadLocal.remove()` | 发现线程已结束但内存仍被占用，**切断 ThreadLocal 到大对象的边** | 变为显式清理：`threadLocal.remove();` |
+| **L6** | **未取消的后台 Timer** | `java.util.Timer` 线程未调用 `cancel()`，持有外部类无法被 GC | **清除 Timer 紫色节点与全局运行环境的连接** | 变为 `timer.cancel();` |
 
-- [ ] **1. L4 事件监听器泄露逻辑**
-  - 初始化画布：🟢 `window` (Root) + 🟠 `Button` (DOM 元素) + 🟣 `clickCallback` (事件监听器) + 🔘 `HeavyComponent` (JS 对象)
-  - 模拟泄漏：组件销毁（`Button` DOM 节点消失），但 `window ──> clickCallback` 依然连着
-  - 解谜：切断 `window ──> clickCallback`，运行 GC，紫色监听器和 80MB 灰色组件消失
+- [ ] **1. L4：监听器未注销（Observer Pattern Leak）**
+  - 初始化画布：🟢 `JVM_Roots` + 🔵 `EventPublisher`（全局事件发布者）+ 🟣 `Listener`（监听器）+ 🔘 `HeavyComponent` (80MB)
+  - 模拟泄漏：点击"销毁组件"，`HeavyComponent` 本该消失，但因未从 `EventPublisher` 注销，组件依然残留
+  - 解谜：切断 `EventPublisher ──> Listener` 的连线，运行 GC，紫色监听器和 80MB 灰色组件消失
+  - **Java 代码对照**：
+    ```java
+    public class HeavyComponent implements Listener {
+        public void onDestroy() {
+            // 切断后高亮此行，代表从全局事件源注销：
+            EventPublisher.unregister(this);
+        }
+    }
+    ```
 
-- [ ] **2. L5 分离 DOM 节点逻辑**
-  - 模拟泄漏：DOM 树删除了 `Button`，但全局 JS 对象 `myApp.cachedButton` 依然引用它
-  - 解谜：切断全局 JS 对象到 `Button` 节点的强引用，代码更新为 `myApp.cachedButton = null;`
+- [ ] **2. L5：ThreadLocal 遗留（ThreadLocal Leak）**
+  - 初始化画布：🟢 `Thread`（工作线程）──> 🟣 `ThreadLocalMap` ──> 🔘 `UserContext`（大对象）
+  - 模拟泄漏：线程处理完请求后回到线程池复用，但未清理 ThreadLocal，`UserContext` 仍驻留
+  - 解谜：切断 `ThreadLocalMap ──> UserContext` 的边
+  - **Java 代码对照**：
+    ```java
+    public class WebFilter {
+        private static ThreadLocal<Context> holder = new ThreadLocal<>();
 
-- [ ] **3. L6 被遗忘的定时器逻辑**
-  - 模拟泄漏：紫色节点 `IntervalTimer` 注册在全局，内部闭包引用组件 `HeavyComponent`
-  - 解谜：切断全局 Root 到紫色 `IntervalTimer` 节点的连线，代码高亮：`clearInterval(this.timerId);`
+        public void doFilter() {
+            try {
+                holder.set(new Context());
+            } finally {
+                // 必须在 finally 中清理，切断后高亮此行：
+                holder.remove();
+            }
+        }
+    }
+    ```
+
+- [ ] **3. L6：未取消的后台 Timer（Timer Thread Leak）**
+  - 初始化画布：🟢 `JVM_Roots` ──> 🟣 `java.util.Timer`（后台线程）──> 🔘 `Task` ──> 🔘 `HeavyComponent`
+  - 模拟泄漏：后台 `Timer` 线程持续运行，只要不取消，就会持有组件引用，整条链无法被 GC
+  - 解谜：切断 `JVM_Roots ──> Timer` 紫色节点的连线
+  - **Java 代码对照**：
+    ```java
+    public class Service {
+        private Timer timer = new Timer();
+
+        public void stopService() {
+            // 停止后台线程，切断连线后高亮此行：
+            timer.cancel();
+        }
+    }
+    ```
 
 ---
 
@@ -299,18 +374,18 @@ gc-sandbox/
 
 - [ ] **2. 编写 README 游戏攻略**
   - 在 `README.md` 中增加 **"Game Guide（玩家通关白皮书）"**
-  - 写明 6 个关卡的设立初衷（涵盖 JavaScript 最经典的 6 种泄露场景）
-  - 说明通关的操作步骤、对应重构的代码
+  - 写明 6 个关卡的设立初衷（涵盖 Java / JVM 最经典的 6 种泄漏场景）
+  - 说明通关的操作步骤、对应重构的 Java 代码
 
 ---
 
 ### 💡 升级亮点与答辩话术
 
-> "传统的算法可视化往往偏向被动演示。因此，我将本项目重构为**基于垃圾回收机制的内存泄漏调试挑战赛**。
+> "传统的算法可视化往往偏向被动演示。因此，我将本项目重构为**基于 JVM 垃圾回收机制的 Java 内存泄漏调试挑战赛**。
 >
-> 游戏一共设立了 6 个渐进式关卡，分别真实模拟了**全局缓存、循环引用、强引用冗余、未解绑事件监听、分离 DOM 节点、以及被遗忘的定时器**这 6 个在现代工程开发中最高发的内存泄漏场景。
+> 游戏一共设立了 6 个渐进式关卡，分别真实模拟了**静态集合膨胀、循环引用孤岛、堆内存强引用冗余、观察者模式监听器未注销、ThreadLocal 遗留、以及未取消的后台 Timer** 这 6 个在 Java 企业级开发中最高发的内存泄漏场景。
 >
-> 系统的创新点在于**图形与真实代码的实时双向联动**：当玩家在拓扑图中切断多余的指针时，右侧代码对照区会实时将对应代码注释掉并补上释放内存的逻辑（如 `clearInterval`、`removeEventListener` 等），真正做到了'直观调试、寓教于乐'。"
+> 系统的创新点在于**图形与 Java 源码的实时双向联动**：当玩家在拓扑图中切断多余的指针时，右侧代码对照区会实时将对应 Java 代码注释掉并补上释放内存的逻辑（如 `holder.remove()`、`timer.cancel()`、`EventPublisher.unregister(this)` 等），真正做到了'直观调试、寓教于乐'。"
 
 ---
 
