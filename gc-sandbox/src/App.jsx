@@ -17,12 +17,14 @@ function App() {
 
   // --- 2. 交互与编辑状态 ---
   const [draggedNodeId, setDraggedNodeId] = useState(null);
+  const [linkingMode, setLinkingMode] = useState(false);      // 连线模式开关
   const [linkingSourceId, setLinkingSourceId] = useState(null); // 用于连线：记录第一个点击的节点
   const [isDeleteEdgeMode, setIsDeleteEdgeMode] = useState(false); // 删除连线模式
   const [deleteEdgeFromId, setDeleteEdgeFromId] = useState(null);  // 删除连线：第一个选中节点
   const [isSimulating, setIsSimulating] = useState(false);      // 模拟运行时锁定界面按钮
-  const canvasRef = useRef(null);
+    const canvasRef = useRef(null);
   const dragOccurred = useRef(false);    // 区分"点击"和"拖拽"：拖拽时不触发连线逻辑
+  const nodeCounter = useRef(nodes.length); // 用于生成递增的节点名称
 
   // --- 3. 辅助图算法（基于当前数据实时计算，不污染 State） ---
   // 获取当前节点指向的所有邻居（出度）
@@ -66,14 +68,21 @@ function App() {
 
   const handleMouseUp = () => {
     setDraggedNodeId(null);
+    dragOccurred.current = false;
+  };
+
+  const handleMouseLeave = () => {
+    setDraggedNodeId(null);
+    dragOccurred.current = false;
   };
 
   // --- 5. 节点与引用关系的手动编辑 ---
-  const addNode = () => {
+    const addNode = () => {
     const id = 'obj_' + Date.now();
+    nodeCounter.current += 1;
     const newNode = {
       id,
-      name: `Obj_${nodes.length}`,
+      name: `Obj_${nodeCounter.current}`,
       isRoot: false,
       x: 150 + Math.random() * 200,
       y: 150 + Math.random() * 200,
@@ -106,18 +115,20 @@ function App() {
       return;
     }
 
-    // 连线模式：点击第一个节点，再点击第二个节点，建立单向引用
-    if (linkingSourceId) {
-      if (linkingSourceId !== nodeId) {
+    // 连线模式（需先点击按钮开启链接模式）：点击第一个节点，再点击第二个节点，建立单向引用
+    if (linkingMode) {
+      if (linkingSourceId === null) {
+        setLinkingSourceId(nodeId); // 标记为连线起点
+      } else if (linkingSourceId === nodeId) {
+        setLinkingSourceId(null);   // 点击同一个节点，取消选中
+      } else {
         const edgeId = `e-${linkingSourceId}-${nodeId}`;
         // 防止重复连线
         if (!edges.some(e => e.id === edgeId)) {
           setEdges(prev => [...prev, { id: edgeId, from: linkingSourceId, to: nodeId }]);
         }
+        setLinkingSourceId(null); // 连线完成，结束连线状态
       }
-      setLinkingSourceId(null); // 结束连线状态
-    } else {
-      setLinkingSourceId(nodeId); // 标记为连线起点
     }
   };
 
@@ -126,6 +137,7 @@ function App() {
   // 【算法一：标记-清除算法】
   const runMarkSweep = async () => {
     setIsSimulating(true);
+    setLinkingMode(false);
     setLinkingSourceId(null);
     setIsDeleteEdgeMode(false);
     setDeleteEdgeFromId(null);
@@ -176,6 +188,7 @@ function App() {
   // 【算法二：引用计数级联回收算法】
   const runReferenceCounting = async () => {
     setIsSimulating(true);
+    setLinkingMode(false);
     setLinkingSourceId(null);
     setIsDeleteEdgeMode(false);
     setDeleteEdgeFromId(null);
@@ -218,6 +231,10 @@ function App() {
 
   // --- 7. 预设经典演示场景 ---
   const loadCircularPreset = () => {
+    setLinkingMode(false);
+    setLinkingSourceId(null);
+    setIsDeleteEdgeMode(false);
+    setDeleteEdgeFromId(null);
     // 一键加载“循环引用”场景：Root 指向 A，而存在独立的 B 和 C 互相引用
     const presetNodes = [
       { id: 'root', name: 'Root', x: 100, y: 250, isRoot: true, state: 'idle' },
@@ -237,6 +254,10 @@ function App() {
   const clearCanvas = () => {
     setNodes([{ id: 'root', name: 'Root', x: 100, y: 250, isRoot: true, state: 'idle' }]);
     setEdges([]);
+    setLinkingMode(false);
+    setLinkingSourceId(null);
+    setIsDeleteEdgeMode(false);
+    setDeleteEdgeFromId(null);
   };
 
   return (
@@ -250,16 +271,24 @@ function App() {
           <button disabled={isSimulating} onClick={addNode}>+ 新增内存对象</button>
           <button 
             disabled={isSimulating} 
-            onClick={() => setLinkingSourceId(null)}
-            style={{ backgroundColor: linkingSourceId ? '#ef4444' : '' }}
+            onClick={() => {
+              setLinkingMode(prev => !prev);
+              setLinkingSourceId(null);
+              if (isDeleteEdgeMode) {
+                setIsDeleteEdgeMode(false);
+                setDeleteEdgeFromId(null);
+              }
+            }}
+            style={{ backgroundColor: linkingMode ? '#ef4444' : '' }}
           >
-            {linkingSourceId ? '❌ 退出连线（取消选中）' : '🔗 点击节点建立连线'}
+            {linkingMode ? '❌ 退出连线模式' : '🔗 连线模式'}
           </button>
-          <button 
+                    <button 
             disabled={isSimulating} 
             onClick={() => {
               setIsDeleteEdgeMode(!isDeleteEdgeMode);
               setDeleteEdgeFromId(null);
+              setLinkingMode(false);
               setLinkingSourceId(null);
             }}
             style={{ backgroundColor: isDeleteEdgeMode ? '#ef4444' : '' }}
@@ -286,10 +315,21 @@ function App() {
           </button>
         </div>
 
-        <div style={{ marginTop: 'auto', fontSize: '12px', color: '#94a3b8' }}>
+                {/* 当前模式指示器 */}
+        <div style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold',
+          backgroundColor: linkingMode ? '#3b82f6' : isDeleteEdgeMode ? '#ef4444' : isSimulating ? '#f97316' : '#1e293b',
+          color: '#fff', border: '1px solid ' + (linkingMode || isDeleteEdgeMode || isSimulating ? 'transparent' : '#334155'),
+          textAlign: 'center' }}>
+          {isSimulating ? '⏳ 模拟运行中...' : 
+           linkingMode ? '🔗 连线模式 — 点击两个节点建立引用' : 
+           isDeleteEdgeMode ? '🗑️ 删除连线模式 — 点击两个节点删除引用' : 
+           '🖱️ 默认模式 — 拖拽节点或选择操作'}
+        </div>
+
+        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
           提示：
           <ol style={{ paddingLeft: '15px' }}>
-            <li>先点一个节点，再点另一个，即可建立引用。</li>
+            <li>点击"连线模式"按钮进入连线状态，然后依次点击两个节点建立引用。</li>
             <li>右键点击节点可快速删除节点及所有关联边。</li>
             <li>点击"删除连线"，再依次点击两个节点可删除边。</li>
             <li>你可以用鼠标自由拖拽节点排版。</li>
@@ -304,6 +344,7 @@ function App() {
         ref={canvasRef}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
       >
         {/* 背景 SVG 负责画引用关系箭头 */}
         <svg style={{ position: 'absolute', width: '100%', height: '100%', pointerEvents: 'none' }}>
