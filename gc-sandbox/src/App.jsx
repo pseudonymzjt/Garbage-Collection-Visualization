@@ -1,21 +1,24 @@
 // src/App.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import './App.css';
+import levels from './levels/LevelData.js';
 
 // 延时辅助函数：有了它，我们就可以用 async/await 编写带“暂停动画”的算法
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function App() {
-  // --- 1. 图结构核心状态（含第一阶段静态假数据） ---
-  const [nodes, setNodes] = useState([
-    { id: 'root', name: 'Root', x: 100, y: 250, isRoot: true, state: 'idle', refCount: 0 },
-    { id: 'node_a', name: 'Obj_A', x: 260, y: 250, isRoot: false, state: 'idle', refCount: 1 },
-  ]);
-  const [edges, setEdges] = useState([
-    { id: 'e-root-a', from: 'root', to: 'node_a' },
-  ]);
+  // --- 1. 关卡状态管理 ---
+  const [currentLevel, setCurrentLevel] = useState(0); // 0: 沙盒, 1~6: 游戏关卡
+  const [levelCompleted, setLevelCompleted] = useState(false);
 
-  // --- 2. 交互与编辑状态 ---
+  // 获取当前关卡数据
+  const levelData = levels[currentLevel] || levels[0];
+
+  // --- 2. 图结构核心状态 ---
+  const [nodes, setNodes] = useState(() => levels[0].initialNodes.map(n => ({ ...n })));
+  const [edges, setEdges] = useState(() => levels[0].initialEdges.map(e => ({ ...e })));
+
+  // --- 3. 交互与编辑状态 ---
   const [draggedNodeId, setDraggedNodeId] = useState(null);
   const [linkingMode, setLinkingMode] = useState(false);      // 连线模式开关
   const [linkingSourceId, setLinkingSourceId] = useState(null); // 用于连线：记录第一个点击的节点
@@ -26,25 +29,74 @@ function App() {
   const dragOccurred = useRef(false);    // 区分"点击"和"拖拽"：拖拽时不触发连线逻辑
   const nodeCounter = useRef(nodes.length); // 用于生成递增的节点名称
 
-  // --- 3. 辅助图算法（基于当前数据实时计算，不污染 State） ---
+  // --- 4. 辅助图算法 ---
   // 获取当前节点指向的所有邻居（出度）
   const getNeighbors = (nodeId, currentEdges = edges) => {
     return currentEdges.filter(e => e.from === nodeId).map(e => e.to);
   };
 
-  // 监听并动态更新每个节点的引用计数 (Reference Count)
+    // 监听并动态更新每个节点的引用计数 (Reference Count)
   useEffect(() => {
     setNodes(prevNodes => 
       prevNodes.map(node => {
         if (node.isRoot) return node;
-        // 计算有多少条边指向该节点（入度）
         const incoming = edges.filter(e => e.to === node.id).length;
         return { ...node, refCount: incoming };
       })
     );
   }, [edges]);
 
-  // --- 4. 节点拖拽定位逻辑 ---
+  // 计算当前活动内存总量
+  const activeMemory = useMemo(() => {
+    return nodes.reduce((sum, n) => sum + (n.size || 0), 0);
+  }, [nodes]);
+
+  // --- 5. 关卡切换逻辑 ---
+  const handleLevelChange = (e) => {
+    const newLevel = parseInt(e.target.value, 10);
+    setCurrentLevel(newLevel);
+    const level = levels[newLevel];
+    setNodes(level.initialNodes.map(n => ({ ...n, state: 'idle', refCount: 0 })));
+    setEdges(level.initialEdges.map(edge => ({ ...edge })));
+    setLevelCompleted(false);
+    setLinkingMode(false);
+    setLinkingSourceId(null);
+    setIsDeleteEdgeMode(false);
+    setDeleteEdgeFromId(null);
+    nodeCounter.current = level.initialNodes.length;
+  };
+
+  // 重置当前关卡
+  const resetLevel = () => {
+    const level = levels[currentLevel];
+    setNodes(level.initialNodes.map(n => ({ ...n, state: 'idle', refCount: 0 })));
+    setEdges(level.initialEdges.map(edge => ({ ...edge })));
+    setLevelCompleted(false);
+    setLinkingMode(false);
+    setLinkingSourceId(null);
+    setIsDeleteEdgeMode(false);
+    setDeleteEdgeFromId(null);
+  };
+
+  // --- 6. 通关检测 ---
+  const checkWinCondition = () => {
+    if (currentLevel === 0) return;
+    if (levelCompleted) return;
+    const won = levelData.checkWin(nodes, edges);
+    if (won) {
+      setLevelCompleted(true);
+    }
+  };
+
+  // 在 GC 运行完后检查通关条件
+  useEffect(() => {
+    if (!isSimulating && !levelCompleted) {
+      const timer = setTimeout(checkWinCondition, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isSimulating, nodes.length]);
+
+  // --- 7. 节点拖拽定位逻辑 ---
   const handleMouseDown = (nodeId, e) => {
     if (isSimulating) return;
     e.stopPropagation();
@@ -76,17 +128,19 @@ function App() {
     dragOccurred.current = false;
   };
 
-  // --- 5. 节点与引用关系的手动编辑 ---
-    const addNode = () => {
+  // --- 8. 节点与引用关系的手动编辑 ---
+      const addNode = () => {
     const id = 'obj_' + Date.now();
     nodeCounter.current += 1;
     const newNode = {
       id,
       name: `Obj_${nodeCounter.current}`,
+      type: 'object',
       isRoot: false,
       x: 150 + Math.random() * 200,
       y: 150 + Math.random() * 200,
-      state: 'idle', // 'idle' | 'marked' | 'sweeping'
+      size: 20 + Math.floor(Math.random() * 60),
+      state: 'idle',
       refCount: 0
     };
     setNodes(prev => [...prev, newNode]);
@@ -132,7 +186,7 @@ function App() {
     }
   };
 
-  // --- 6. 核心垃圾回收算法实现 ---
+  // --- 9. 核心垃圾回收算法实现 ---
 
   // 【算法一：标记-清除算法】
   const runMarkSweep = async () => {
@@ -229,18 +283,18 @@ function App() {
     setIsSimulating(false);
   };
 
-  // --- 7. 预设经典演示场景 ---
+  // --- 10. 预设经典演示场景 ---
   const loadCircularPreset = () => {
     setLinkingMode(false);
     setLinkingSourceId(null);
     setIsDeleteEdgeMode(false);
     setDeleteEdgeFromId(null);
     // 一键加载“循环引用”场景：Root 指向 A，而存在独立的 B 和 C 互相引用
-    const presetNodes = [
-      { id: 'root', name: 'Root', x: 100, y: 250, isRoot: true, state: 'idle' },
-      { id: 'node_a', name: 'Obj_A', x: 260, y: 250, isRoot: false, state: 'idle' },
-      { id: 'node_b', name: 'Obj_B', x: 450, y: 150, isRoot: false, state: 'idle' },
-      { id: 'node_c', name: 'Obj_C', x: 450, y: 350, isRoot: false, state: 'idle' },
+        const presetNodes = [
+      { id: 'root', name: 'Root', type: 'root', x: 100, y: 250, size: 0, isRoot: true, state: 'idle', refCount: 0 },
+      { id: 'node_a', name: 'Obj_A', type: 'object', x: 260, y: 250, size: 30, isRoot: false, state: 'idle', refCount: 0 },
+      { id: 'node_b', name: 'Obj_B', type: 'object', x: 450, y: 150, size: 30, isRoot: false, state: 'idle', refCount: 0 },
+      { id: 'node_c', name: 'Obj_C', type: 'object', x: 450, y: 350, size: 30, isRoot: false, state: 'idle', refCount: 0 },
     ];
     const presetEdges = [
       { id: 'e-r-a', from: 'root', to: 'node_a' },
@@ -251,8 +305,8 @@ function App() {
     setEdges(presetEdges);
   };
 
-  const clearCanvas = () => {
-    setNodes([{ id: 'root', name: 'Root', x: 100, y: 250, isRoot: true, state: 'idle' }]);
+    const clearCanvas = () => {
+    setNodes([{ id: 'root', name: 'Root', type: 'root', x: 100, y: 250, size: 0, isRoot: true, state: 'idle', refCount: 0 }]);
     setEdges([]);
     setLinkingMode(false);
     setLinkingSourceId(null);
@@ -260,14 +314,104 @@ function App() {
     setDeleteEdgeFromId(null);
   };
 
-  return (
+  // --- 8. 计算 Java 代码行状态 ---
+  const getCodeLineClass = (line) => {
+    if (line.alwaysNormal) return 'normal';
+    if (line.activeEdge) {
+      const edgeExists = edges.some(e => e.id === line.activeEdge);
+      if (edgeExists) return 'active';
+      return 'comment';
+    }
+    return 'normal';
+  };
+
+  const getCodeLineText = (line, lineClass) => {
+    if (lineClass === 'comment' && line.commentText) {
+      return line.commentText;
+    }
+    return line.text;
+  };
+
+  // 获取节点类型对应的 CSS 类名
+  const getNodeTypeClass = (node) => {
+    if (node.isRoot) return 'root-node';
+    switch (node.type) {
+      case 'dom': return 'dom-node';
+      case 'purple': return 'purple-node';
+      case 'root': return 'root-node';
+      default: return 'object-node';
+    }
+  };
+
+  const isGameLevel = currentLevel > 0;
+
+    return (
     <div className="app-container">
-      {/* 左侧控制台 */}
+      {/* ===== 左侧控制台 ===== */}
       <div className="control-panel">
-        <h2 className="panel-title">GC Sandbox 控制台</h2>
+        <h2 className="panel-title">GC Sandbox</h2>
         
+        {/* 关卡选择器 */}
+        <div className="level-selector">
+          <label htmlFor="level-select">🎯 关卡选择</label>
+          <select 
+            id="level-select"
+            value={currentLevel} 
+            onChange={handleLevelChange}
+            disabled={isSimulating}
+          >
+            {levels.map(level => (
+              <option key={level.id} value={level.id}>
+                {level.id === 0 ? level.name : `L${level.id}: ${level.name}`}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 关卡信息（非沙盒模式） */}
+        {isGameLevel && (
+          <div className="level-info">
+            <h3>📌 {levelData.name}</h3>
+            <p className="level-description">{levelData.description}</p>
+            <p className="level-goal">🎯 目标：{levelData.goal}</p>
+            {levelData.memoryLimit && (
+              <p className="level-memory">💾 限制：活动内存 ≤ {levelData.memoryLimit} MB</p>
+            )}
+            <div className="memory-indicator" style={{ marginTop: '8px' }}>
+              <span>当前内存</span>
+              <span>
+                <span className={`memory-value ${levelData.memoryLimit && activeMemory <= levelData.memoryLimit ? 'within-limit' : ''}`}>
+                  {activeMemory} MB
+                </span>
+                {levelData.memoryLimit && (
+                  <span className="memory-limit"> / {levelData.memoryLimit} MB</span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 通关徽章 */}
+        {levelCompleted && (
+          <div className="level-completed-badge">
+            🏆 通关成功！内存泄漏已修复！
+          </div>
+        )}
+
+        {/* 重置关卡 */}
+        {isGameLevel && (
+          <button 
+            disabled={isSimulating} 
+            onClick={resetLevel}
+            style={{ backgroundColor: '#6b7280' }}
+          >
+            🔄 重置本关卡
+          </button>
+        )}
+
+        {/* 画布编辑工具 */}
         <div className="btn-group">
-          <h3>1. 画布编辑</h3>
+          <h3>✏️ 画布编辑</h3>
           <button disabled={isSimulating} onClick={addNode}>+ 新增内存对象</button>
           <button 
             disabled={isSimulating} 
@@ -283,7 +427,7 @@ function App() {
           >
             {linkingMode ? '❌ 退出连线模式' : '🔗 连线模式'}
           </button>
-                    <button 
+          <button 
             disabled={isSimulating} 
             onClick={() => {
               setIsDeleteEdgeMode(!isDeleteEdgeMode);
@@ -298,44 +442,43 @@ function App() {
           <button disabled={isSimulating} onClick={clearCanvas}>🧹 清空画布</button>
         </div>
 
+        {/* GC 运行按钮 */}
         <div className="btn-group">
-          <h3>2. 运行垃圾回收</h3>
+          <h3>⚡ 垃圾回收</h3>
           <button disabled={isSimulating} onClick={runMarkSweep} style={{ backgroundColor: '#eab308' }}>
-            ⚡ 运行：标记-清除 (Mark-Sweep)
+            ⚡ 标记-清除 (Mark-Sweep)
           </button>
           <button disabled={isSimulating} onClick={runReferenceCounting} style={{ backgroundColor: '#f97316' }}>
-            🔄 运行：引用计数 (Reference Counting)
+            🔄 引用计数 (Reference Counting)
           </button>
-        </div>
-
-        <div className="btn-group">
-          <h3>3. 预设场景一键演示</h3>
           <button disabled={isSimulating} onClick={loadCircularPreset} style={{ backgroundColor: '#8b5cf6' }}>
             🌀 加载：循环引用缺陷场景
           </button>
         </div>
 
-                {/* 当前模式指示器 */}
+        {/* 模式指示器 */}
         <div style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold',
           backgroundColor: linkingMode ? '#3b82f6' : isDeleteEdgeMode ? '#ef4444' : isSimulating ? '#f97316' : '#1e293b',
           color: '#fff', border: '1px solid ' + (linkingMode || isDeleteEdgeMode || isSimulating ? 'transparent' : '#334155'),
           textAlign: 'center' }}>
           {isSimulating ? '⏳ 模拟运行中...' : 
            linkingMode ? '🔗 连线模式 — 点击两个节点建立引用' : 
-           isDeleteEdgeMode ? '🗑️ 删除连线模式 — 点击两个节点删除引用' : 
-           '🖱️ 默认模式 — 拖拽节点或选择操作'}
+           isDeleteEdgeMode ? '🗑️ 删除连线模式 — 依次点击两节点' : 
+           isGameLevel ? `🎮 ${levelData.name} — 按目标操作` :
+           '🖱️ 沙盒模式 — 自由编辑'}
         </div>
 
-        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-          提示：
-          <ol style={{ paddingLeft: '15px' }}>
-            <li>点击"连线模式"按钮进入连线状态，然后依次点击两个节点建立引用。</li>
-            <li>右键点击节点可快速删除节点及所有关联边。</li>
-            <li>点击"删除连线"，再依次点击两个节点可删除边。</li>
-            <li>你可以用鼠标自由拖拽节点排版。</li>
-            <li>加载"循环引用"可以直观对比出两种垃圾回收算法的区别。</li>
-          </ol>
-        </div>
+        {/* 提示 */}
+        {!isGameLevel && (
+          <div className="sandbox-hint">
+            沙盒模式 — 自由编辑画布，运行 GC 算法观察效果
+          </div>
+        )}
+        {isGameLevel && (
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+            💡 提示：右键点击节点可快速删除（含关联边）
+          </div>
+        )}
       </div>
 
       {/* 右侧画布 */}
@@ -381,11 +524,11 @@ function App() {
           })}
         </svg>
 
-        {/* 渲染内存对象 */}
+                {/* 渲染内存对象 */}
         {nodes.map(node => (
           <div
             key={node.id}
-            className={`node ${node.isRoot ? 'root-node' : ''} ${node.state === 'marked' ? 'marked-node' : ''} ${node.state === 'sweeping' ? 'sweeping-node' : ''} ${linkingSourceId === node.id ? 'linking-source' : ''} ${deleteEdgeFromId === node.id ? 'delete-target' : ''}`}
+            className={`node ${getNodeTypeClass(node)} ${node.state === 'marked' ? 'marked-node' : ''} ${node.state === 'sweeping' ? 'sweeping-node' : ''} ${linkingSourceId === node.id ? 'linking-source' : ''} ${deleteEdgeFromId === node.id ? 'delete-target' : ''}`}
             style={{ left: node.x, top: node.y }}
             onMouseDown={(e) => handleMouseDown(node.id, e)}
             onClick={() => handleNodeClick(node.id)}
@@ -405,8 +548,74 @@ function App() {
             {!node.isRoot && (
               <span className="ref-count-badge">rc: {node.refCount || 0}</span>
             )}
+            {/* 内存大小圆标 */}
+            {node.size > 0 && (
+              <span className="size-badge">{node.size}MB</span>
+            )}
           </div>
         ))}
+              {/* 画布水印 — 关卡模式提示 */}
+        {isGameLevel && !levelCompleted && (
+          <div style={{
+            position: 'absolute', bottom: '16px', right: '16px',
+            color: '#1f2937', fontSize: '12px', fontFamily: 'monospace',
+            letterSpacing: '1px', userSelect: 'none', pointerEvents: 'none',
+            opacity: 0.5
+          }}>
+            L{currentLevel}: {levelData.name}
+          </div>
+        )}
+      </div>
+
+      {/* ===== 右侧 Java 代码对照面板 ===== */}
+      <div className="code-panel">
+        <h3>
+          📜 Java 代码对照
+          <span className="code-lang-badge">JVM</span>
+        </h3>
+        
+        {levelData.javaCode.length > 0 ? (
+          <pre>
+            <code>
+              {levelData.javaCode.map((line, index) => {
+                const lineClass = getCodeLineClass(line);
+                const displayText = getCodeLineText(line, lineClass);
+                return (
+                  <span 
+                    key={index}
+                    className={`code-line ${lineClass}`}
+                  >
+                    <span className="code-line-number">{index + 1}</span>
+                    {displayText}
+                  </span>
+                );
+              })}
+            </code>
+          </pre>
+        ) : (
+          <div style={{ 
+            color: '#4b5563', fontSize: '13px', textAlign: 'center', 
+            padding: '40px 20px', border: '1px dashed #1f2937', borderRadius: '8px'
+          }}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '24px' }}>🛝</p>
+            <p style={{ margin: '0' }}>沙盒模式 — 暂无 Java 代码对照</p>
+            <p style={{ margin: '6px 0 0 0', fontSize: '11px' }}>选择一个关卡查看对应的泄漏场景源码</p>
+          </div>
+        )}
+
+        {/* 图例说明 */}
+        <div style={{ fontSize: '11px', color: '#4b5563', borderTop: '1px solid #1f2937', paddingTop: '10px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <span><span style={{ color: '#fbbf24' }}>🟡 高亮</span> = 泄漏代码（连线未断）</span>
+            <span><span style={{ color: '#4b5563', textDecoration: 'line-through' }}>⚪ 注释</span> = 已修复（连线已断）</span>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', flexWrap: 'wrap' }}>
+            <span><span style={{ color: '#10b981' }}>🟢 绿色</span> = GC Root</span>
+            <span><span style={{ color: '#f97316' }}>🟠 橙色</span> = 事件源</span>
+            <span><span style={{ color: '#8b5cf6' }}>🟣 紫色</span> = JVM 内部</span>
+            <span><span style={{ color: '#475569' }}>⚫ 灰色</span> = 普通对象</span>
+          </div>
+        </div>
       </div>
     </div>
   );
